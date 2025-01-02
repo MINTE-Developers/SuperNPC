@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
-using System.Diagnostics.Metrics;
+using System.Runtime.CompilerServices;
+using UnityEngine;
 
 namespace Oxide.Plugins
 {
@@ -10,6 +11,8 @@ namespace Oxide.Plugins
         #region Fields
 
         private static SuperNPC _instance;
+
+        private readonly string _npcPrefab = "assets/rust.ai/agents/npcplayer/npcplayertest.prefab";
 
         #endregion
 
@@ -53,7 +56,15 @@ namespace Oxide.Plugins
 
         #region Functions
 
+        private void CreateNPC(Vector3 spawnPosition)
+        {
+            var snpc = GameManager.server.CreateEntity(_npcPrefab, spawnPosition) as NPCPlayer;
+            if (snpc == null)
+                return;
 
+            snpc.Spawn();
+            snpc.gameObject.AddComponent<CoreNPC>().InitNPC(snpc);
+        }
 
         #endregion
 
@@ -65,13 +76,29 @@ namespace Oxide.Plugins
 
         #region Core NPC
 
+        private class CoreNPC : MonoBehaviour
+        {
+            public NPCPlayer _npc;
+            CoreMovement _movement;
 
+            public void InitNPC(NPCPlayer npc)
+            {
+                _npc = npc;
+                _movement = gameObject.AddComponent<CoreMovement>();
+            }
+        }
 
         #endregion
 
         #region Movement
 
+        private class CoreMovement : CoreNPC
+        {
+            private void Awake()
+            {
 
+            }
+        }
 
         #endregion
 
