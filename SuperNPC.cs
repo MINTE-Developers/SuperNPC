@@ -1,6 +1,5 @@
 ﻿using Newtonsoft.Json;
-using Oxide.Plugins;
-using UnityEngine;
+using System.Diagnostics.Metrics;
 
 namespace Oxide.Plugins
 {
@@ -10,13 +9,18 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-
+        private static SuperNPC _instance;
 
         #endregion
 
-        #region Initalisation
+        #region Initialisation / Uninitialisation
 
+        private void OnServerInitialized()
+        {
+            cmd.AddChatCommand(config.generalSettings.mainCommand, this, nameof(MainCommand));
 
+            _instance = this;
+        }
 
         #endregion
 
@@ -28,7 +32,10 @@ namespace Oxide.Plugins
 
         #region Commands
 
+        private void MainCommand(BasePlayer player, string command, params string[ ] args)
+        {
 
+        }
 
         #endregion
 
