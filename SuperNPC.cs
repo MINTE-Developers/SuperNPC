@@ -17,6 +17,9 @@ namespace Oxide.Plugins
 
         private readonly string _npcPrefab = "assets/rust.ai/agents/npcplayer/npcplayertest.prefab";
 
+        private static Dictionary<BasePlayer, DebugManager> _activeDebugManagers = new Dictionary<BasePlayer, DebugManager>();
+        private static List<NPCPlayer> _activeNPCs = new List<NPCPlayer>();
+
         #endregion
 
         #region Initialisation / Uninitialisation
@@ -26,6 +29,25 @@ namespace Oxide.Plugins
             //cmd.AddChatCommand(config.generalSettings.mainCommand, this, nameof(MainCommand));
 
             _instance = this;
+        }
+
+        private void Unload() 
+        {
+            foreach (var npc in _activeNPCs) 
+            {
+                if (npc == null)
+                    continue;
+
+                npc.AdminKill();
+            }
+
+            foreach (var debugManager in _activeDebugManagers.Values) 
+            {
+                if (debugManager == null)
+                    continue;
+
+                UnityEngine.Object.DestroyImmediate(debugManager);
+            }
         }
 
         #endregion
@@ -41,10 +63,8 @@ namespace Oxide.Plugins
         [ChatCommand("snpc")]
         private void MainCommand(BasePlayer player, string command, params string[ ] args)
         {
-            var debugManager = player.gameObject.AddComponent<DebugManager>();
-            debugManager.InitDebugManager(player);
-
-            debugManager.DebugSphere(player.transform.position, 2f, "#ffffff");
+            CreateNPC(player.transform.position);
+            CreateDebugManager(player);
         }
 
         #endregion
@@ -73,6 +93,27 @@ namespace Oxide.Plugins
             snpc.gameObject.AddComponent<CoreNPC>().InitNPC(snpc);
         }
 
+        private DebugManager CreateDebugManager(BasePlayer player) 
+        {
+            var debugManager = player.gameObject.AddComponent<DebugManager>();
+            debugManager.InitDebugManager(player);
+
+            return debugManager;
+        }
+
+        private DebugManager? RetrieveDebugManager(BasePlayer player) 
+        {
+            var debugManager = player.gameObject.GetComponent<DebugManager>();
+           
+            if (debugManager == null)
+            {
+                PrintError("Debug Manager is null?");
+                return null;
+            }
+
+            return debugManager;
+        }
+
         #endregion
 
         #region Agent
@@ -93,6 +134,8 @@ namespace Oxide.Plugins
                 _npc = npc;
                 _movement = gameObject.AddComponent<CoreMovement>();
                 _movement.InitMovement(_npc);
+
+                _activeNPCs.Add(_npc);
             }
         }
 
@@ -144,6 +187,19 @@ namespace Oxide.Plugins
                 MoveAction(_npc.transform.position + new Vector3(10f, 0f, 10f), SpeedType.Walk);
             }
 
+            private void LateUpdate() 
+            {
+                foreach(var debugManager in _activeDebugManagers.Values) 
+                {
+                    debugManager.DebugSphere(_npc.transform.position, 1f, "#0437F2", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position + new Vector3(3f, Physics.Raycast(_npc.transform.position + new Vector3(3f, 0f, 3f) + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 10f, layers) ? hit.point.y : _npc.transform.position.y, 3f), 0.5f, "#0437F2", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position + new Vector3(-3f, Physics.Raycast(_npc.transform.position + new Vector3(3f, 0f, 3f) + Vector3.up * 2f, Vector3.down, out RaycastHit hit2, 10f, layers) ? hit2.point.y : _npc.transform.position.y, 3f), 0.5f, "#0437F2", 0.1f);
+                    debugManager.DebugLine(_npc.transform.position, _npc.transform.position + new Vector3(0f, 0f, 3f), "#0437F2", 0.1f);
+                    debugManager.DebugText(_npc.transform.position + new Vector3(0f, 3f, 0f) + Vector3.up * 2f, "STRENGTH", "#0437F2", 0.1f);
+                }
+
+            }
+
             /// These are the main functions the agent will call deep neural network (DNN) 
             #region Actions 
 
@@ -184,6 +240,8 @@ namespace Oxide.Plugins
 
                 while (true)
                 {
+                    
+
                     // Calculate the distance to the target position
                     float distance = Vector3.Distance(_npc.transform.position, targetPosition);
 
@@ -246,8 +304,9 @@ namespace Oxide.Plugins
             public void InitDebugManager(BasePlayer player)
             {
                 _player = player;
+                _activeDebugManagers.Add(_player, this);
             }
-
+            
 
             public void DebugLine(Vector3 startPosition, Vector3 endPosition, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.line", aliveTime, HexToColour(colour), startPosition, endPosition);
             public void DebugArrow(Vector3 startPosition, Vector3 endPosition, string colour, float aliveTime = 10f, float arrowHeadSize = 2f) => _player.SendConsoleCommand("ddraw.arrow", aliveTime, HexToColour(colour), startPosition, endPosition, arrowHeadSize);
@@ -278,9 +337,6 @@ namespace Oxide.Plugins
 
         private class ConfigData
         {
-            [JsonProperty(PropertyName = "Debug mode")]
-            public bool debug { get; set; }
-
             [JsonProperty(PropertyName = "General Settings")]
             public GeneralSettings generalSettings { get; set; }
 
@@ -333,10 +389,9 @@ namespace Oxide.Plugins
         {
             config = new ConfigData
             {
-                debug = false,
                 generalSettings = new GeneralSettings()
                 {
-                    mainCommand = "Super NPC",
+                    mainCommand = "snpc",
                     APIKey = "API-key-here"
                 },
 
