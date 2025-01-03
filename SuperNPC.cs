@@ -1,10 +1,15 @@
-﻿using Newtonsoft.Json;
-using System.Runtime.CompilerServices;
+﻿using System.Collections;
+using System.Collections.Generic;
+using Newtonsoft.Json;
 using UnityEngine;
+using Vector3 = UnityEngine.Vector3;
+using System;
+using System.Drawing;
+using Color = UnityEngine.Color;
 
 namespace Oxide.Plugins
 {
-    [Info("Super NPC", "Mint", "1.0.0")]
+    [Info("Super NPC", "MINTE", "1.0.0")]
     [Description("Make your NPCs real players.")]
     public class SuperNPC : RustPlugin
     {
@@ -14,15 +19,37 @@ namespace Oxide.Plugins
 
         private readonly string _npcPrefab = "assets/rust.ai/agents/npcplayer/npcplayertest.prefab";
 
+        private static Dictionary<BasePlayer, DebugManager> _activeDebugManagers = new Dictionary<BasePlayer, DebugManager>();
+        private static List<NPCPlayer> _activeNPCs = new List<NPCPlayer>();
+
         #endregion
 
         #region Initialisation / Uninitialisation
 
         private void OnServerInitialized()
         {
-            cmd.AddChatCommand(config.generalSettings.mainCommand, this, nameof(MainCommand));
+            //cmd.AddChatCommand(config.generalSettings.mainCommand, this, nameof(MainCommand));
 
             _instance = this;
+        }
+
+        private void Unload() 
+        {
+            foreach (var npc in _activeNPCs) 
+            {
+                if (npc == null)
+                    continue;
+
+                npc.AdminKill();
+            }
+
+            foreach (var debugManager in _activeDebugManagers.Values) 
+            {
+                if (debugManager == null)
+                    continue;
+
+                UnityEngine.Object.DestroyImmediate(debugManager);
+            }
         }
 
         #endregion
@@ -35,9 +62,11 @@ namespace Oxide.Plugins
 
         #region Commands
 
+        [ChatCommand("snpc")]
         private void MainCommand(BasePlayer player, string command, params string[ ] args)
         {
-
+            CreateNPC(player.transform.position);
+            CreateDebugManager(player);
         }
 
         #endregion
@@ -66,6 +95,27 @@ namespace Oxide.Plugins
             snpc.gameObject.AddComponent<CoreNPC>().InitNPC(snpc);
         }
 
+        private DebugManager CreateDebugManager(BasePlayer player) 
+        {
+            var debugManager = player.gameObject.AddComponent<DebugManager>();
+            debugManager.InitDebugManager(player);
+
+            return debugManager;
+        }
+
+        private DebugManager? RetrieveDebugManager(BasePlayer player) 
+        {
+            var debugManager = player.gameObject.GetComponent<DebugManager>();
+           
+            if (debugManager == null)
+            {
+                PrintError("Debug Manager is null?");
+                return null;
+            }
+
+            return debugManager;
+        }
+
         #endregion
 
         #region Agent
@@ -78,13 +128,16 @@ namespace Oxide.Plugins
 
         private class CoreNPC : MonoBehaviour
         {
-            public NPCPlayer _npc;
+            private NPCPlayer _npc;
             CoreMovement _movement;
 
             public void InitNPC(NPCPlayer npc)
             {
                 _npc = npc;
                 _movement = gameObject.AddComponent<CoreMovement>();
+                _movement.InitMovement(_npc);
+
+                _activeNPCs.Add(_npc);
             }
         }
 
@@ -94,11 +147,168 @@ namespace Oxide.Plugins
 
         private class CoreMovement : CoreNPC
         {
-            private void Awake()
+            private NPCPlayer _npc;
+
+            Vector3 _startPosition;
+            Vector3 _targetPositon;
+
+            LayerMask layers = ~(1 << LayerMask.NameToLayer("Player (Server)"));
+
+            Coroutine _moveToPosition;
+            // Coroutine _rotateToDirection;
+
+            public enum SpeedType
             {
+                Walk,
+                Sprint,
+                Crouch,
+                Wounded,
+                Swim
+            }
+
+            private readonly Dictionary<SpeedType, float> _movementSpeeds = new Dictionary<SpeedType, float>
+            {
+                { SpeedType.Walk, 2.8f },
+                { SpeedType.Sprint, 5.5f },
+                { SpeedType.Crouch, 1.7f },
+                { SpeedType.Wounded, 0.72f },
+                { SpeedType.Swim, 0.33f }
+            };
+            
+            private float GetSpeed(SpeedType speedType) => _movementSpeeds.TryGetValue(speedType, out float speed) ? speed : throw new ArgumentException($"Invalid SpeedType: {speedType}");
+
+            public void InitMovement(NPCPlayer npc)
+            {
+                _npc = npc;
+
+                // Ensure the NPC starts on the ground
+                if (Physics.Raycast(_npc.transform.position + Vector3.up, Vector3.down, out RaycastHit hit, float.MaxValue, layers))
+                {
+                    _npc.transform.position = hit.point;
+                    _npc.ServerPosition = _npc.transform.position;
+                    _npc.SendNetworkUpdateImmediate();
+                }
+
+                _startPosition = _npc.transform.position;
+
+                MoveAction(_npc.transform.position + new Vector3(0f, 0f, 10f), SpeedType.Sprint);
+                _instance.timer.Once(1.5f,() => {
+                    MoveAction(_npc.transform.position + new Vector3(-5f, 0f, -7f), SpeedType.Walk);
+                    
+                    _instance.timer.Once(1.5f,() => {
+                    MoveAction(_npc.transform.position + new Vector3(0f, 0f, 30f), SpeedType.Sprint);
+                    
+                });
+                });
+
+
+                InvokeRepeating(nameof(MovementDebug), 0.3f, 0.1f);
+            }
+
+            private void MovementDebug() 
+            {
+                foreach(var debugManager in _activeDebugManagers.Values) 
+                {
+                    debugManager.DebugSphere(_startPosition, 0.2f, "#ff0000", 0.1f);
+                    debugManager.DebugSphere(_targetPositon, 0.2f, "#ffff00", 0.1f);
+
+                    debugManager.DebugSphere(_npc.transform.position, 0.2f, "#00008B", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position + new Vector3(1f, 0f, 1f), 0.2f, "#00008B", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position + new Vector3(-1f, 0f, 1f), 0.2f, "#00008B", 0.1f);
+                    debugManager.DebugArrow(_npc.transform.position, _npc.transform.position + new Vector3(0f, 0f, 1f), "#00008B", 0.1f, 0.1f);
+                    debugManager.DebugText(_npc.transform.position + new Vector3(0f, 1f, 0f) + Vector3.up, "1.0", "#00ff6a", 0.1f);
+                }
 
             }
-        }
+
+            /// These are the main functions the agent will call deep neural network (DNN) 
+            #region Actions 
+
+            public void MoveAction(Vector3 targetPosition, SpeedType speedType, bool stopMoving = false) 
+            {
+                if (_moveToPosition != null ) 
+                {
+                    StopCoroutine(_moveToPosition);
+                    _moveToPosition = null;
+                }
+                
+                if (stopMoving)
+                    return;
+
+                // if (Physics.Raycast(_npc.transform.position, Vector3.down + Vector3.up, out RaycastHit hit, float.MaxValue, layers))
+                //     _targetPositon.y = hit.point.y;
+
+                _moveToPosition = StartCoroutine(MoveToPosition(targetPosition, speedType));
+
+                _targetPositon = targetPosition;
+            }
+
+            // public void Rotate(Vector3 targetPosition, SpeedType speedType, bool stopRotate = false) 
+            // {
+            //     if (_moveToPosition != null ) 
+            //     {
+            //         StopCoroutine(_rotateToDirection);
+            //         _rotateToDirection = null;
+            //     }
+                
+            //     if (stopRotate)
+            //         return;
+
+            //     _rotateToDirection = StartCoroutine(MoveToPosition(targetPosition, speedType));
+            // }
+
+            #endregion
+
+
+            private IEnumerator MoveToPosition(Vector3 targetPosition, SpeedType speedType)
+            {
+                float speed = GetSpeed(speedType);
+                var tempTargetPos = targetPosition;
+                
+                // Why is Y equal to 0 on both vectors? Well we only calculate both X and Z for both vectors because what if a y value (for either vector) is like 50 meters up in the sky  
+                // the conditional is never satisfied. Additionally if we calculate for 3D distance when the NPC gets to its desired location (for the X and Z) it will
+                // just slow down. 
+                tempTargetPos.y = 0f;
+                while (Vector3.Distance(new Vector3(_npc.transform.position.x, 0f, _npc.transform.position.z), tempTargetPos) > 0.1f)
+                {
+                    Move(speed, targetPosition);
+                    yield return null;
+                }
+            }
+
+           private void Move(float baseSpeed, Vector3 targetPosition)
+            {
+                Vector3 currentPosition = _npc.transform.position;
+
+                Vector3 moveDirection = new Vector3(
+                    targetPosition.x - currentPosition.x,
+                    0, 
+                    targetPosition.z - currentPosition.z
+                ).normalized;
+
+                Vector3 targetMove = moveDirection * baseSpeed * Time.deltaTime;
+
+                Vector3 newPosition = new Vector3(
+                    currentPosition.x + targetMove.x,
+                    currentPosition.y, 
+                    currentPosition.z + targetMove.z
+                );
+
+                 if (Physics.Raycast(newPosition + Vector3.up, Vector3.down, out RaycastHit hit, float.MaxValue, layers)) 
+                    newPosition.y = hit.point.y + 0.1f;
+
+                // Apply the new position
+                _npc.transform.position = newPosition;
+                _npc.ServerPosition = newPosition;
+                _npc.SendNetworkUpdateImmediate();
+            }
+
+
+
+            // ADD Slope calculation (Going uphill should be slower)
+            // ADD Angle calculation (You can sprint while holding W + D, so make NPC walk)
+         }
+
 
         #endregion
 
@@ -107,6 +317,38 @@ namespace Oxide.Plugins
 
 
         #endregion
+
+        #region DebugManager 
+
+        private class DebugManager : MonoBehaviour 
+        {
+            BasePlayer _player;
+
+            public void InitDebugManager(BasePlayer player)
+            {
+                _player = player;
+                
+                if(!_activeDebugManagers.ContainsKey(player))
+                    _activeDebugManagers.Add(_player, this);
+            }
+            
+
+            public void DebugLine(Vector3 startPosition, Vector3 endPosition, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.line", aliveTime, HexToColour(colour), startPosition, endPosition);
+            public void DebugArrow(Vector3 startPosition, Vector3 endPosition, string colour, float aliveTime = 10f, float arrowHeadSize = 2f) => _player.SendConsoleCommand("ddraw.arrow", aliveTime, HexToColour(colour), startPosition, endPosition, arrowHeadSize);
+            public void DebugSphere(Vector3 origin, float radius, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.sphere", aliveTime, HexToColour(colour), origin, radius);
+            public void DebugText(Vector3 origin, string text, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.text", aliveTime, HexToColour(colour), origin, text);
+            public void DebugBox(Vector3 origin, float size, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.box", aliveTime, HexToColour(colour), origin, size);
+
+
+            private Color HexToColour(string colour) 
+            {
+                ColorUtility.TryParseHtmlString(colour, out Color parsedColour);
+                return parsedColour;
+            }
+        }
+
+        #endregion
+
 
         #region Localisation
 
@@ -120,9 +362,6 @@ namespace Oxide.Plugins
 
         private class ConfigData
         {
-            [JsonProperty(PropertyName = "Debug mode")]
-            public bool debug { get; set; }
-
             [JsonProperty(PropertyName = "General Settings")]
             public GeneralSettings generalSettings { get; set; }
 
@@ -175,10 +414,9 @@ namespace Oxide.Plugins
         {
             config = new ConfigData
             {
-                debug = false,
                 generalSettings = new GeneralSettings()
                 {
-                    mainCommand = "Super NPC",
+                    mainCommand = "snpc",
                     APIKey = "API-key-here"
                 },
 
