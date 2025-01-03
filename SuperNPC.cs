@@ -261,7 +261,7 @@ namespace Oxide.Plugins
                 Vector3 newPosition = currentPosition + targetMove;
 
                 // Adjust for ground height
-                if (Physics.Raycast(newPosition + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 10f, layers)) 
+                if (Physics.Raycast(newPosition + Vector3.up, Vector3.down, out RaycastHit hit, 10f, layers)) 
                     newPosition.y = hit.point.y + 0.1f;
 
                 _npc.transform.position = newPosition;
@@ -292,7 +292,9 @@ namespace Oxide.Plugins
             public void InitDebugManager(BasePlayer player)
             {
                 _player = player;
-                _activeDebugManagers.Add(_player, this);
+                
+                if(!_activeDebugManagers.ContainsKey(player))
+                    _activeDebugManagers.Add(_player, this);
             }
             
 
