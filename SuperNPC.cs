@@ -184,18 +184,20 @@ namespace Oxide.Plugins
                     _npc.SendNetworkUpdateImmediate();
                 }
 
-                MoveAction(_npc.transform.position + new Vector3(10f, 0f, 10f), SpeedType.Walk);
+                MoveAction(_npc.transform.position + new Vector3(0f, 0f, 10f), SpeedType.Sprint);
+
+                InvokeRepeating(nameof(MovementDebug), 0.3f, 0.1f);
             }
 
-            private void LateUpdate() 
+            private void MovementDebug() 
             {
                 foreach(var debugManager in _activeDebugManagers.Values) 
                 {
-                    debugManager.DebugSphere(_npc.transform.position, 1f, "#0437F2", 0.1f);
-                    debugManager.DebugSphere(_npc.transform.position + new Vector3(3f, Physics.Raycast(_npc.transform.position + new Vector3(3f, 0f, 3f) + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 10f, layers) ? hit.point.y : _npc.transform.position.y, 3f), 0.5f, "#0437F2", 0.1f);
-                    debugManager.DebugSphere(_npc.transform.position + new Vector3(-3f, Physics.Raycast(_npc.transform.position + new Vector3(3f, 0f, 3f) + Vector3.up * 2f, Vector3.down, out RaycastHit hit2, 10f, layers) ? hit2.point.y : _npc.transform.position.y, 3f), 0.5f, "#0437F2", 0.1f);
-                    debugManager.DebugLine(_npc.transform.position, _npc.transform.position + new Vector3(0f, 0f, 3f), "#0437F2", 0.1f);
-                    debugManager.DebugText(_npc.transform.position + new Vector3(0f, 3f, 0f) + Vector3.up * 2f, "STRENGTH", "#0437F2", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position, 0.2f, "#00008B", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position + new Vector3(1f, 0f, 1f), 0.2f, "#00008B", 0.1f);
+                    debugManager.DebugSphere(_npc.transform.position + new Vector3(-1f, 0f, 1f), 0.2f, "#00008B", 0.1f);
+                    debugManager.DebugArrow(_npc.transform.position, _npc.transform.position + new Vector3(0f, 0f, 1f), "#00008B", 0.1f, 0.1f);
+                    debugManager.DebugText(_npc.transform.position + new Vector3(0f, 1f, 0f) + Vector3.up, "1.0", "#00ff6a", 0.1f);
                 }
 
             }
@@ -237,24 +239,17 @@ namespace Oxide.Plugins
             private IEnumerator MoveToPosition(Vector3 targetPosition, SpeedType speedType)
             {
                 float speed = GetSpeed(speedType);
+                float stopDistance = 0.1f; // The distance at which the NPC will stop moving
 
-                while (true)
+                while (Vector3.Distance(_npc.transform.position, targetPosition) > stopDistance)
                 {
-                    
-
-                    // Calculate the distance to the target position
-                    float distance = Vector3.Distance(_npc.transform.position, targetPosition);
-
-                    if (distance <= 0.1f)
-                    {
-                        SnapToPosition(targetPosition); 
-                        yield break;
-                    }
-
                     Move(speed, targetPosition);
-
                     yield return null;
                 }
+
+                _npc.transform.position = targetPosition;
+                _npc.ServerPosition = targetPosition;
+                _npc.SendNetworkUpdateImmediate();
             }
 
             private void Move(float baseSpeed, Vector3 targetPosition)
@@ -267,17 +262,10 @@ namespace Oxide.Plugins
 
                 // Adjust for ground height
                 if (Physics.Raycast(newPosition + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 10f, layers)) 
-                    newPosition.y = hit.point.y + 0.1f; 
+                    newPosition.y = hit.point.y + 0.1f;
 
                 _npc.transform.position = newPosition;
                 _npc.ServerPosition = newPosition;
-                _npc.SendNetworkUpdateImmediate();
-            }
-
-            private void SnapToPosition(Vector3 position)
-            {
-                _npc.transform.position = position;
-                _npc.ServerPosition = position;
                 _npc.SendNetworkUpdateImmediate();
             }
 
