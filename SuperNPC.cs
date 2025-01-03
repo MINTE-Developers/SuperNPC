@@ -186,7 +186,7 @@ namespace Oxide.Plugins
 
                 MoveAction(_npc.transform.position + new Vector3(0f, 0f, 10f), SpeedType.Sprint);
                 _instance.timer.Once(1.5f,() => {
-                    MoveAction(_npc.transform.position + new Vector3(-5f, 5f, -7f), SpeedType.Walk);
+                    MoveAction(_npc.transform.position + new Vector3(-5f, 0f, -7f), SpeedType.Walk);
                     
                 });
 
@@ -244,20 +244,17 @@ namespace Oxide.Plugins
             private IEnumerator MoveToPosition(Vector3 targetPosition, SpeedType speedType)
             {
                 float speed = GetSpeed(speedType);
+                var tempTargetPos = targetPosition;
 
                 // Why is Y equal to 0 on both vectors? Well we only calculate both X and Z for both vectors because what if a y value (for either vector) is like 50 meters up in the sky  
                 // the conditional is never satisfied. Additionally if we calculate for 3D distance when the NPC gets to its desired location (for the X and Z) it will
                 // just slow down. 
-                targetPosition.y = 0f;
-                while (Vector3.Distance(new Vector3(_npc.transform.position.x, 0f, _npc.transform.position.z), targetPosition) > 0.1f)
+                tempTargetPos.y = 0f;
+                while (Vector3.Distance(new Vector3(_npc.transform.position.x, 0f, _npc.transform.position.z), tempTargetPos) > 0.2f)
                 {
                     Move(speed, targetPosition);
                     yield return null;
                 }
-
-                _npc.transform.position = targetPosition;
-                _npc.ServerPosition = targetPosition;
-                _npc.SendNetworkUpdateImmediate();
             }
 
             private void Move(float baseSpeed, Vector3 targetPosition)
