@@ -41,7 +41,10 @@ namespace Oxide.Plugins
         [ChatCommand("snpc")]
         private void MainCommand(BasePlayer player, string command, params string[ ] args)
         {
-            CreateNPC(player.transform.position);
+            var debugManager = player.gameObject.AddComponent<DebugManager>();
+            debugManager.InitDebugManager(player);
+
+            debugManager.DebugSphere(player.transform.position, 2f, "#ffffff");
         }
 
         #endregion
@@ -184,20 +187,17 @@ namespace Oxide.Plugins
                     // Calculate the distance to the target position
                     float distance = Vector3.Distance(_npc.transform.position, targetPosition);
 
-                    // If close enough, snap to the target position
                     if (distance <= 0.1f)
                     {
-                        SnapToPosition(targetPosition);
-                        yield break; // Exit the coroutine immediately
+                        SnapToPosition(targetPosition); 
+                        yield break;
                     }
 
-                    // Move towards the target position
                     Move(speed, targetPosition);
 
-                    yield return null; // Wait for the next frame
+                    yield return null;
                 }
             }
-
 
             private void Move(float baseSpeed, Vector3 targetPosition)
             {
@@ -208,10 +208,8 @@ namespace Oxide.Plugins
                 Vector3 newPosition = currentPosition + targetMove;
 
                 // Adjust for ground height
-                if (Physics.Raycast(newPosition + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 10f, layers)) // Increase raycast length
-                {
-                    newPosition.y = hit.point.y + 0.1f; // Adjust height to ground level
-                }
+                if (Physics.Raycast(newPosition + Vector3.up * 2f, Vector3.down, out RaycastHit hit, 10f, layers)) 
+                    newPosition.y = hit.point.y + 0.1f; 
 
                 _npc.transform.position = newPosition;
                 _npc.ServerPosition = newPosition;
@@ -238,6 +236,35 @@ namespace Oxide.Plugins
 
 
         #endregion
+
+        #region DebugManager 
+
+        private class DebugManager : MonoBehaviour 
+        {
+            BasePlayer _player;
+
+            public void InitDebugManager(BasePlayer player)
+            {
+                _player = player;
+            }
+
+
+            public void DebugLine(Vector3 startPosition, Vector3 endPosition, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.line", aliveTime, HexToColour(colour), startPosition, endPosition);
+            public void DebugArrow(Vector3 startPosition, Vector3 endPosition, string colour, float aliveTime = 10f, float arrowHeadSize = 2f) => _player.SendConsoleCommand("ddraw.arrow", aliveTime, HexToColour(colour), startPosition, endPosition, arrowHeadSize);
+            public void DebugSphere(Vector3 origin, float radius, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.sphere", aliveTime, HexToColour(colour), origin, radius);
+            public void DebugText(Vector3 origin, string text, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.text", aliveTime, HexToColour(colour), origin, text);
+            public void DebugBox(Vector3 origin, float size, string colour, float aliveTime = 10f) => _player.SendConsoleCommand("ddraw.box", aliveTime, HexToColour(colour), origin, size);
+
+
+            private Color HexToColour(string colour) 
+            {
+                ColorUtility.TryParseHtmlString(colour, out Color parsedColour);
+                return parsedColour;
+            }
+        }
+
+        #endregion
+
 
         #region Localisation
 
