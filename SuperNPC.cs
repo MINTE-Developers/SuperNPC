@@ -4,6 +4,8 @@ using Newtonsoft.Json;
 using UnityEngine;
 using Vector3 = UnityEngine.Vector3;
 using System;
+using System.Drawing;
+using Color = UnityEngine.Color;
 
 namespace Oxide.Plugins
 {
@@ -147,6 +149,9 @@ namespace Oxide.Plugins
         {
             private NPCPlayer _npc;
 
+            Vector3 _startPosition;
+            Vector3 _targetPositon;
+
             LayerMask layers = ~(1 << LayerMask.NameToLayer("Player (Server)"));
 
             Coroutine _moveToPosition;
@@ -184,10 +189,16 @@ namespace Oxide.Plugins
                     _npc.SendNetworkUpdateImmediate();
                 }
 
+                _startPosition = _npc.transform.position;
+
                 MoveAction(_npc.transform.position + new Vector3(0f, 0f, 10f), SpeedType.Sprint);
                 _instance.timer.Once(1.5f,() => {
                     MoveAction(_npc.transform.position + new Vector3(-5f, 0f, -7f), SpeedType.Walk);
                     
+                    _instance.timer.Once(1.5f,() => {
+                    MoveAction(_npc.transform.position + new Vector3(0f, 0f, 30f), SpeedType.Sprint);
+                    
+                });
                 });
 
 
@@ -198,6 +209,9 @@ namespace Oxide.Plugins
             {
                 foreach(var debugManager in _activeDebugManagers.Values) 
                 {
+                    debugManager.DebugSphere(_startPosition, 0.2f, "#ff0000", 0.1f);
+                    debugManager.DebugSphere(_targetPositon, 0.2f, "#ffff00", 0.1f);
+
                     debugManager.DebugSphere(_npc.transform.position, 0.2f, "#00008B", 0.1f);
                     debugManager.DebugSphere(_npc.transform.position + new Vector3(1f, 0f, 1f), 0.2f, "#00008B", 0.1f);
                     debugManager.DebugSphere(_npc.transform.position + new Vector3(-1f, 0f, 1f), 0.2f, "#00008B", 0.1f);
@@ -221,7 +235,12 @@ namespace Oxide.Plugins
                 if (stopMoving)
                     return;
 
+                // if (Physics.Raycast(_npc.transform.position, Vector3.down + Vector3.up, out RaycastHit hit, float.MaxValue, layers))
+                //     _targetPositon.y = hit.point.y;
+
                 _moveToPosition = StartCoroutine(MoveToPosition(targetPosition, speedType));
+
+                _targetPositon = targetPosition;
             }
 
             // public void Rotate(Vector3 targetPosition, SpeedType speedType, bool stopRotate = false) 
@@ -245,34 +264,45 @@ namespace Oxide.Plugins
             {
                 float speed = GetSpeed(speedType);
                 var tempTargetPos = targetPosition;
-
+                
                 // Why is Y equal to 0 on both vectors? Well we only calculate both X and Z for both vectors because what if a y value (for either vector) is like 50 meters up in the sky  
                 // the conditional is never satisfied. Additionally if we calculate for 3D distance when the NPC gets to its desired location (for the X and Z) it will
                 // just slow down. 
                 tempTargetPos.y = 0f;
-                while (Vector3.Distance(new Vector3(_npc.transform.position.x, 0f, _npc.transform.position.z), tempTargetPos) > 0.2f)
+                while (Vector3.Distance(new Vector3(_npc.transform.position.x, 0f, _npc.transform.position.z), tempTargetPos) > 0.1f)
                 {
                     Move(speed, targetPosition);
                     yield return null;
                 }
             }
 
-            private void Move(float baseSpeed, Vector3 targetPosition)
+           private void Move(float baseSpeed, Vector3 targetPosition)
             {
                 Vector3 currentPosition = _npc.transform.position;
-                Vector3 moveDirection = (targetPosition - currentPosition).normalized;
+
+                Vector3 moveDirection = new Vector3(
+                    targetPosition.x - currentPosition.x,
+                    0, 
+                    targetPosition.z - currentPosition.z
+                ).normalized;
 
                 Vector3 targetMove = moveDirection * baseSpeed * Time.deltaTime;
-                Vector3 newPosition = currentPosition + targetMove;
 
-                // Adjust for ground height
-                if (Physics.Raycast(newPosition + Vector3.up, Vector3.down, out RaycastHit hit, 10f, layers)) 
+                Vector3 newPosition = new Vector3(
+                    currentPosition.x + targetMove.x,
+                    currentPosition.y, 
+                    currentPosition.z + targetMove.z
+                );
+
+                 if (Physics.Raycast(newPosition + Vector3.up, Vector3.down, out RaycastHit hit, float.MaxValue, layers)) 
                     newPosition.y = hit.point.y + 0.1f;
 
+                // Apply the new position
                 _npc.transform.position = newPosition;
                 _npc.ServerPosition = newPosition;
                 _npc.SendNetworkUpdateImmediate();
             }
+
 
 
             // ADD Slope calculation (Going uphill should be slower)
